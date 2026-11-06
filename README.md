@@ -22,6 +22,6 @@ La documentación del proyecto original está [aquí](https://eastsideurbanism.g
 
 ## Proyectos relacionados
 
-- [iTranvías API](https://github.com/peprolinbot/itranvias_api) &mdash; envoltura y documentación de la API queryitr de A Coruña
+- [iTranvías API](https://github.com/peprolinbot/itranvias_api) &mdash; wrapper y documentación de la API queryitr de A Coruña
 - [Transit Tracker ESPHome Component](https://github.com/tjhorner/esphome-transit-tracker) &mdash; componente ESPHome del firmware, sin cambios de protocolo
 - [Transit Tracker Configurator](https://github.com/tjhorner/transit-tracker-configurator) &mdash; el configurador web que sigue usando el panel
