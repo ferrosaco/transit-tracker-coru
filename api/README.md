@@ -6,7 +6,9 @@ No usa GTFS, OneBusAway ni ninguna otra red.
 
 Documentación de origen: <https://pedrorey.es/itranvias_api/itranvias_api.html>
 
-## Arranque
+## Ver los buses en el navegador
+
+La página de inicio lista las paradas y los próximos buses, sin el panel. Con el servicio arrancado, abre `http://127.0.0.1:8080`.
 
 ```bash
 cd api

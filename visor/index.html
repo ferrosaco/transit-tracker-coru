@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Buses de A Coruña</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #121417;
+        --card: #1c2128;
+        --text: #f4f1ea;
+        --muted: #b7b1a6;
+        --line: #2c333c;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      main {
+        max-width: 40rem;
+        margin: 0 auto;
+        padding: 1.5rem 1rem 3rem;
+      }
+      h1 { font-size: 1.7rem; margin: 0 0 0.4rem; }
+      .lead { color: var(--muted); margin: 0 0 1.2rem; line-height: 1.4; }
+      label { display: block; font-weight: 650; margin-bottom: 0.35rem; }
+      input {
+        width: 100%;
+        font: inherit;
+        padding: 0.75rem 0.8rem;
+        border-radius: 0.7rem;
+        border: 1px solid var(--line);
+        background: var(--card);
+        color: inherit;
+      }
+      ul, ol { list-style: none; margin: 0.8rem 0 0; padding: 0; }
+      button.stop {
+        width: 100%;
+        text-align: left;
+        font: inherit;
+        color: inherit;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 0.7rem;
+        padding: 0.75rem 0.8rem;
+        margin-bottom: 0.45rem;
+        cursor: pointer;
+      }
+      button.stop small { display: block; color: var(--muted); margin-top: 0.15rem; }
+      #board { margin-top: 1.4rem; }
+      #stop-name { margin: 0; font-size: 1.25rem; }
+      #status { color: var(--muted); min-height: 1.2rem; }
+      .trip {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 0.7rem;
+        align-items: center;
+        background: var(--card);
+        border-radius: 0.7rem;
+        padding: 0.7rem 0.8rem;
+        margin-bottom: 0.45rem;
+      }
+      .badge {
+        min-width: 2.4rem;
+        text-align: center;
+        font-weight: 750;
+        border-radius: 0.45rem;
+        padding: 0.35rem 0.4rem;
+      }
+      .dest { font-size: 1.05rem; }
+      .when { font-variant-numeric: tabular-nums; font-weight: 700; }
+      .error { color: #ffb4b4; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Buses de A Coruña</h1>
+      <p class="lead">Escribe una parada. Verás los próximos buses, los mismos que mostraría el panel.</p>
+      <label for="q">Parada</label>
+      <input id="q" placeholder="Por ejemplo, Puerta Real" autocomplete="off" autofocus />
+      <ul id="matches"></ul>
+      <section id="board" hidden>
+        <h2 id="stop-name"></h2>
+        <p id="status"></p>
+        <ol id="trips"></ol>
+      </section>
+    </main>
+    <script>
+      const queryInput = document.querySelector("#q");
+      const matches = document.querySelector("#matches");
+      const board = document.querySelector("#board");
+      const stopName = document.querySelector("#stop-name");
+      const status = document.querySelector("#status");
+      const trips = document.querySelector("#trips");
+      let selected = null;
+      let timer = 0;
+      let refresh = 0;
+
+      queryInput.addEventListener("input", () => {
+        clearTimeout(timer);
+        timer = setTimeout(search, 200);
+      });
+
+      async function search() {
+        const q = queryInput.value.trim();
+        matches.replaceChildren();
+        if (q.length < 2 && !/^\d+$/.test(q)) return;
+        const response = await fetch("/stops?q=" + encodeURIComponent(q));
+        if (!response.ok) return showError("No se han podido buscar las paradas.");
+        const stops = await response.json();
+        if (stops.length === 0) {
+          const empty = document.createElement("p");
+          empty.className = "error";
+          empty.textContent = "No hay ninguna parada con ese nombre.";
+          matches.append(empty);
+          return;
+        }
+        for (const stop of stops) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "stop";
+          button.textContent = stop.name;
+          const code = document.createElement("small");
+          code.textContent = "Parada " + stop.stopCode;
+          button.append(code);
+          button.addEventListener("click", () => choose(stop));
+          matches.append(button);
+        }
+      }
+
+      async function choose(stop) {
+        selected = stop;
+        matches.replaceChildren();
+        queryInput.value = stop.name;
+        board.hidden = false;
+        stopName.textContent = stop.name;
+        status.className = "";
+        status.textContent = "Buscando buses…";
+        trips.replaceChildren();
+        clearInterval(refresh);
+        await load();
+        refresh = setInterval(load, 15000);
+      }
+
+      async function load() {
+        if (!selected) return;
+        try {
+          const routesResponse = await fetch("/stops/" + encodeURIComponent(selected.stopId) + "/routes");
+          if (!routesResponse.ok) throw new Error("routes");
+          const routes = await routesResponse.json();
+          if (routes.length === 0) {
+            status.textContent = "Esta parada no tiene líneas.";
+            trips.replaceChildren();
+            return;
+          }
+          const pairs = routes.map((route) => route.routeId + "," + selected.stopId).join(";");
+          const scheduleResponse = await fetch("/schedule/" + encodeURIComponent(pairs) + "?limit=8");
+          if (!scheduleResponse.ok) throw new Error("schedule");
+          const schedule = await scheduleResponse.json();
+          draw(schedule.trips || []);
+        } catch (error) {
+          showError("No se han podido leer los buses. Prueba otra vez en unos segundos.");
+        }
+      }
+
+      function draw(items) {
+        trips.replaceChildren();
+        status.className = "";
+        if (items.length === 0) {
+          status.textContent = "Ahora mismo no hay buses de camino a esta parada.";
+          return;
+        }
+        status.textContent = "Se actualiza solo cada 15 segundos.";
+        for (const trip of items) {
+          const row = document.createElement("li");
+          row.className = "trip";
+          const badge = document.createElement("span");
+          badge.className = "badge";
+          badge.textContent = trip.routeName;
+          const color = /^[0-9a-fA-F]{6}$/.test(trip.routeColor || "") ? trip.routeColor : "444444";
+          badge.style.background = "#" + color;
+          badge.style.color = readable(color);
+          const dest = document.createElement("span");
+          dest.className = "dest";
+          dest.textContent = trip.headsign;
+          const when = document.createElement("span");
+          when.className = "when";
+          when.textContent = minutesLabel(trip.arrivalTime);
+          row.append(badge, dest, when);
+          trips.append(row);
+        }
+      }
+
+      function minutesLabel(unix) {
+        const diff = unix - Date.now() / 1000;
+        if (diff < 30) return "Ahora";
+        const minutes = Math.floor(diff / 60);
+        if (minutes < 60) return minutes + " min";
+        const hours = Math.floor(minutes / 60);
+        return hours + " h " + (minutes % 60) + " min";
+      }
+
+      function readable(hex) {
+        const value = parseInt(hex, 16);
+        const r = (value >> 16) & 255;
+        const g = (value >> 8) & 255;
+        const b = value & 255;
+        return r * 0.299 + g * 0.587 + b * 0.114 > 150 ? "#1a1a1a" : "#ffffff";
+      }
+
+      function showError(message) {
+        status.textContent = message;
+        status.className = "error";
+      }
+    </script>
+  </body>
+</html>

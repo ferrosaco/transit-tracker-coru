@@ -158,6 +158,16 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.client.close()
 
+    async def test_home_and_stop_search(self):
+        home = await self.client.get("/")
+        text = await home.text()
+        self.assertEqual(home.status, 200)
+        self.assertIn("Buses de A Coruña", text)
+        found = await self.client.get("/stops", params={"q": "puerta"})
+        stops = await found.json()
+        self.assertEqual(stops[0]["name"], "Puerta Real")
+        self.assertEqual(stops[0]["stopId"], "coruna:1")
+
     async def test_feeds_and_stop_routes(self):
         feeds = await self.client.get("/feeds")
         body = await feeds.json()

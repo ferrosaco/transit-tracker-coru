@@ -1,9 +1,10 @@
 FROM python:3.12-slim
 
 WORKDIR /app
-COPY requirements.txt .
+COPY api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY itranvias_adapter ./itranvias_adapter
+COPY api/itranvias_adapter ./itranvias_adapter
+COPY visor/index.html ./itranvias_adapter/preview.html
 
 ENV PORT=8080
 EXPOSE 8080
