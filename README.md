@@ -1,14 +1,14 @@
-# Transit Tracker
+# Transit Tracker Coru
 
 <p align="center">
   <img src="docs/static/img/transit-tracker.webp" alt="Transit Tracker Logo" width="400" />
 </p>
 
-This repository contains the firmware and documentation for Transit Tracker, an open-source DIY public transit arrivals board for your home.
+Este repositorio es un fork de Transit Tracker que lo adapta para funcionar con (y solo con) la API de iTranvías (A Coruña).
 
-Please see the complete documentation [here](https://eastsideurbanism.github.io/transit-tracker)!
+La documentación completa del proyecto original está [aquí](https://eastsideurbanism.github.io/transit-tracker)!
 
-## Related Projects
+## Proyectos relacionados
 
 - [Transit Tracker API](https://github.com/tjhorner/transit-tracker-api) &mdash; the service which syndicates and streams schedule data to Transit Tracker devices
 - [Transit Tracker ESPHome Component](https://github.com/tjhorner/esphome-transit-tracker) &mdash; the ESPHome custom component which powers the Transit Tracker firmware
