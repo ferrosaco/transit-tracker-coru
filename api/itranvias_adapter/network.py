@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import unicodedata
 from dataclasses import dataclass
 
 from . import FEED_CODE
@@ -66,34 +65,6 @@ class Network:
             for stop in self.stops.values()
             if west <= stop.lon <= east and south <= stop.lat <= north
         ]
-
-    def search_stops(self, query: str, limit: int = 20) -> list[Stop]:
-        needle = fold(query.strip())
-        if len(needle) < 2 and not needle.isdigit():
-            return []
-        scored: list[tuple[int, str, Stop]] = []
-        for stop in self.stops.values():
-            name = fold(stop.name)
-            code = str(stop.id)
-            if needle == code:
-                rank = 0
-            elif code.startswith(needle) and needle.isdigit():
-                rank = 1
-            elif name.startswith(needle):
-                rank = 2
-            elif needle in name:
-                rank = 3
-            else:
-                continue
-            scored.append((rank, name, stop))
-        scored.sort(key=lambda item: (item[0], item[1]))
-        return [stop for _, _, stop in scored[:limit]]
-
-
-def fold(text: str) -> str:
-    decomposed = unicodedata.normalize("NFD", text)
-    stripped = "".join(char for char in decomposed if unicodedata.category(char) != "Mn")
-    return stripped.casefold()
 
 
 def global_id(local_id: int) -> str:

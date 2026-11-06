@@ -4,7 +4,6 @@ import asyncio
 import logging
 import os
 from datetime import datetime, timezone
-from pathlib import Path
 
 from aiohttp import WSMsgType, web
 
@@ -80,7 +79,6 @@ def create_app(client: ItranviasClient | None = None) -> web.Application:
     app = web.Application(middlewares=[cors_middleware])
     app["catalog"] = catalog
     app.router.add_get("/", index)
-    app.router.add_get("/stops", search_stops)
     app.router.add_get("/feeds", feeds)
     app.router.add_get("/feeds/service-areas", service_areas)
     app.router.add_get("/stops/within/{bbox}", stops_within)
@@ -128,34 +126,19 @@ async def _refresh_loop(catalog: Catalog) -> None:
             log.exception("Error al refrescar la red estática de iTranvías")
 
 
-def preview_html() -> str:
-    shared = Path(__file__).resolve().parents[2] / "visor" / "index.html"
-    bundled = Path(__file__).with_name("preview.html")
-    path = shared if shared.is_file() else bundled
-    return path.read_text(encoding="utf-8")
-
-
 async def index(request: web.Request) -> web.StreamResponse:
     if request.headers.get("Upgrade", "").lower() == "websocket":
         return await websocket(request)
-    return web.Response(text=preview_html(), content_type="text/html", charset="utf-8")
-
-
-async def search_stops(request: web.Request) -> web.Response:
-    network = await request.app["catalog"].ensure()
-    query = request.query.get("q", "")
-    stops = network.search_stops(query)
+    catalog: Catalog = request.app["catalog"]
+    ready = catalog.network is not None
     return web.json_response(
-        [
-            {
-                "stopId": stop.global_id,
-                "stopCode": str(stop.id),
-                "name": stop.name,
-                "lat": stop.lat,
-                "lon": stop.lon,
-            }
-            for stop in stops
-        ]
+        {
+            "service": FEED_NAME,
+            "feed": FEED_CODE,
+            "ready": ready,
+            "lines": len(catalog.network.lines) if ready else 0,
+            "stops": len(catalog.network.stops) if ready else 0,
+        }
     )
 
 
