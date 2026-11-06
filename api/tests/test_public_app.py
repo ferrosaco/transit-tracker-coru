@@ -13,7 +13,8 @@ class PublicAppTests(unittest.TestCase):
     def test_home_explains_the_configurator_url(self):
         response = self.client.get("/", headers={"Origin": "https://countdown-config.horner.tj"})
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Advanced", response.text)
+        self.assertIn('Hola!! Este link va en el campo "API". A ver si funciona.', response.text)
+        self.assertIn("-Darío :-)", response.text)
         self.assertEqual(response.headers["access-control-allow-origin"], "*")
 
     def test_feeds_routes_and_schedule(self):

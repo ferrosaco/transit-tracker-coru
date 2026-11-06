@@ -25,9 +25,7 @@ HOME_HTML = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Configurador Coruña</title>
 <body style="font-family: system-ui, sans-serif; max-width: 38rem; margin: 3rem auto; padding: 0 1rem; line-height: 1.5">
-<h1>Buses de A Coruña</h1>
-<p>Esta dirección es la que va en la pestaña <strong>Advanced</strong> del configurador de Transit Tracker, en el campo del API.</p>
-<p>Sirve para elegir la parada en el mapa. El panel, después de guardar, pide las llegadas directamente a iTranvías.</p>
+<p>Hola!! Este link va en el campo "API". A ver si funciona.<br>-Darío :-)</p>
 </body>
 </html>
 """
