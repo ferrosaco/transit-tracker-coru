@@ -4,7 +4,7 @@ This section includes more advanced or uncommon options.
 
 ## API Server
 
-If you're self-hosting your own [Transit Tracker API server](../../03-advanced/api-server.md), you can enter its URL here. Make sure to include the full URL, including `http://` or `https://`.
+Aquí va la URL del adaptador de iTranvías descrito en [API Server](../../03-advanced/api-server.md). Incluye el esquema, `http://` o `https://`. El configurador la convierte a WebSocket al grabarla en el panel. Sin esta URL el dispositivo no tiene de dónde leer las llegadas de A Coruña.
 
 ## Display Orientation
 
