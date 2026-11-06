@@ -24,7 +24,7 @@ docker compose up --build
 
 Queda en el puerto 8080.
 
-En el configurador, pestaña Advanced, la URL del API es `http://<tu-ordenador>:8080` mientras eliges la parada. El feed es uno solo, `coruna`, y los identificadores que se graban son `coruna:100` (línea) y `coruna:1` (parada).
+En el configurador, pestaña Advanced, la URL del API puede ser una copia publicada de este servicio. El feed es uno solo, `coruna`, y los identificadores que se graban son `coruna:100` (línea) y `coruna:1` (parada). Si hace falta levantarlo en local, la URL es `http://<tu-ordenador>:8080`.
 
 ## Qué devuelve
 
