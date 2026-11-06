@@ -4,7 +4,7 @@ This section includes more advanced or uncommon options.
 
 ## API Server
 
-Aquí va la URL del adaptador de iTranvías descrito en [API Server](../../03-advanced/api-server.md), solo mientras eliges la parada en el mapa. Incluye el esquema, `http://` o `https://`. El panel no usa esa URL para las llegadas: las pide directamente a iTranvías.
+La URL pública es `https://configurador-coru.vercel.app`. Solo hace falta para elegir la parada en el mapa. El panel no la usa para las llegadas: las pide directamente a iTranvías. El servicio está descrito en [API Server](../../03-advanced/api-server.md).
 
 ## Display Orientation
 

@@ -2,7 +2,7 @@
 
 El panel consulta iTranvías directamente, en `https://itranvias.com/queryitr_v3.php`. No mantiene un WebSocket abierto contra ningún servidor.
 
-El directorio `api/` sigue haciendo falta para el mapa del configurador: publica las mismas rutas REST (`/feeds`, `/stops/within`, `/stops/{id}/routes`, `/schedule/...`) para poder elegir parada y línea. En cuanto esa elección queda grabada en el panel, el adaptador se puede apagar. Las llegadas las pide el propio panel.
+La web pública del mapa es [https://configurador-coru.vercel.app](https://configurador-coru.vercel.app). Publica las mismas rutas REST (`/feeds`, `/stops/within`, `/stops/{id}/routes`, `/schedule/...`) para poder elegir parada y línea. En cuanto esa elección queda grabada, el panel no vuelve a llamarla: las llegadas las pide él a iTranvías. El código está en `api/`.
 
 La descripción de queryitr está en [itranvias_api](https://pedrorey.es/itranvias_api/itranvias_api.html). No hay feeds GTFS, OneBusAway, HAFAS ni ninguna otra ciudad.
 
@@ -29,6 +29,6 @@ python -m itranvias_adapter
 
 También se puede levantar con `docker compose up --build` dentro de `api/`. Escucha en el puerto 8080.
 
-En el configurador, pestaña **Advanced**, la URL del API es `http://<ordenador>:8080` (o `https://` si lo publicas detrás de TLS). El único feed es `coruna`. Los identificadores que guarda el panel son del estilo `coruna:100` para la línea 1 y `coruna:1` para la parada Puerta Real. Una selección anterior con otro prefijo de feed no se interpreta: hay que volver a elegir la parada.
+En el configurador, pestaña **Advanced**, la URL del API es `https://configurador-coru.vercel.app`. El único feed es `coruna`. Los identificadores que guarda el panel son del estilo `coruna:100` para la línea 1 y `coruna:1` para la parada Puerta Real. Una selección anterior con otro prefijo de feed no se interpreta: hay que volver a elegir la parada.
 
 El reloj del firmware usa `Europe/Madrid` y el texto por defecto de una llegada inmediata es «Ahora». El firmware de este fork no consulta el manifiesto de actualización de Eastside.
