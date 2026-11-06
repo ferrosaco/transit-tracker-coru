@@ -57,11 +57,11 @@ If you see a status message on your Transit Tracker instead of the schedule, tha
 3. Restart your Transit Tracker.
 4. If all else fails, try re-flashing the latest firmware in the [configurator](/configurator).
 
-### "No base URL set"
+### "Select a stop"
 
-**Problem:** You have not yet configured your Transit Tracker in the [configurator](/configurator). (Technically, this means your Transit Tracker does not know where to get the schedule data from.)
+**Problem:** El panel todavía no tiene una parada de A Coruña grabada. Una selección antigua de otro feed (por ejemplo un GTFS) no sirve.
 
-**Solution:** Go to the [configurator](/configurator), select some routes, and save the configuration.
+**Solution:** Arranca el adaptador de `api/`, apunta el configurador a esa URL y vuelve a elegir la parada. Los pasos están en el README del repositorio.
 
 ### "Error loading schedule"
 
@@ -70,7 +70,7 @@ If you see a status message on your Transit Tracker instead of the schedule, tha
 **Solution:**
 
 1. Make sure your Wi-Fi network has internet access.
-2. If you have any sort of firewall or network filtering on your router, make sure it allows TLS connections to `tt.horner.tj` (if you haven't changed the server you're using).
+2. If you have any sort of firewall or network filtering on your router, make sure it allows TLS connections to `itranvias.com`.
 3. Restart your Transit Tracker.
 4. Re-save your configuration from the [configurator](/configurator).
 

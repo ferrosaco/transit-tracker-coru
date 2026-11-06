@@ -1,5 +1,7 @@
 # Firmware Updates
 
+Este fork no se actualiza solo desde el manifiesto de Eastside. El botón «Update firmware» del configurador y la opción Auto-Update del programa original instalan ese otro firmware, y con él el panel deja de llamar a iTranvías. Antes de grabar este firmware hay que apagar Auto-Update en la web del panel. El binario para subirlo por la sección OTA Update es `docs/static/firmware/firmware.ota.bin`.
+
 We occasionally release new versions of the Transit Tracker firmware to add new features, fix bugs, or improve performance (e.g., more stable Wi-Fi connection). Applying these updates is highly recommended. There are a few ways to get them to your device.
 
 ## USB

@@ -40,7 +40,10 @@ external_components:
     components: [ hub75 ]
   - source: github://tjhorner/esphome-custom-components@157c1c216ab296fd2cecc197728f9cbb909344d3
     components: [ serial_rpc, lis3dh, project_version ]
-  - source: github://tjhorner/esphome-transit-tracker@c54676e5fa0ad1aaccd9a5e047d2f642a4a53629
+  - source:
+      type: local
+      path: components
+    components: [ transit_tracker ]
 
 logger:
   level: DEBUG
@@ -84,15 +87,6 @@ ota:
     id: ota_esphome
     password: ""
 
-update:
-  - platform: http_request
-    id: update_http_request
-    name: Firmware Update
-    source: https://transit-tracker.eastsideurbanism.org/firmware/manifest.json
-    on_update_available:
-      then:
-        - script.execute: update_firmware
-
 switch:
   - platform: template
     id: flip_display_config
@@ -115,13 +109,6 @@ switch:
       - lambda: id(tracker).set_scroll_headsigns(true);
     turn_off_action:
       - lambda: id(tracker).set_scroll_headsigns(false);
-  - platform: template
-    id: auto_update_config
-    name: "Auto-Update"
-    icon: "mdi:update"
-    optimistic: true
-    restore_mode: RESTORE_DEFAULT_ON
-    entity_category: "config"
 
 button:
   - platform: restart
@@ -297,18 +284,6 @@ script:
           id: display_brightness
           relative_brightness: !lambda "return up ? 0.2 : -0.2;"
           transition_length: 0.1s
-  - id: update_firmware
-    then:
-      - if:
-          condition:
-            or:
-              - lambda: return strcmp(ESPHOME_PROJECT_VERSION, "dev") == 0;
-              - switch.is_off: auto_update_config
-          then:
-            - logger.log: "New firmware available, but auto-update is disabled or this is a dev build; skipping."
-          else:
-            - logger.log: "New firmware available; starting update."
-            - update.perform:
   - id: update_orientation
     then:
       - if:

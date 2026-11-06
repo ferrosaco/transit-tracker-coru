@@ -1,6 +1,6 @@
 # API iTranvías para Transit Tracker
 
-Este servicio habla el mismo protocolo que espera el Transit Tracker (REST para el configurador y WebSocket para el panel) y obtiene los datos solo de la API `queryitr` de iTranvías, la de la Compañía de Tranvías de La Coruña.
+Este servicio habla el REST que usa el mapa del configurador y obtiene los datos solo de la API `queryitr` de iTranvías, la de la Compañía de Tranvías de La Coruña. El panel no lo necesita para mostrar llegadas: después de guardar la parada llama a iTranvías por su cuenta, y este proceso se puede parar.
 
 No usa GTFS, OneBusAway ni ninguna otra red.
 
@@ -24,7 +24,7 @@ docker compose up --build
 
 Queda en el puerto 8080.
 
-En el configurador, pestaña Advanced, la URL del API es `http://<tu-servidor>:8080`. El configurador la convierte a `ws://` al enviarla al dispositivo. El feed es uno solo, `coruna`, y los identificadores salen como `coruna:100` (línea) y `coruna:1` (parada).
+En el configurador, pestaña Advanced, la URL del API es `http://<tu-ordenador>:8080` mientras eliges la parada. El feed es uno solo, `coruna`, y los identificadores que se graban son `coruna:100` (línea) y `coruna:1` (parada).
 
 ## Qué devuelve
 
