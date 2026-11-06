@@ -2,7 +2,7 @@
 
 ![](/img/transit-tracker.webp)
 
-Transit Tracker is a DIY public transit arrivals board powered by an ESP32-S3 and two LED matrix displays. It's entirely open source and can be customized to show arrivals for any route from [any transit agency](./02-user-manual/99-faq/agency-support.mdx).
+Transit Tracker es un panel de llegadas de transporte público, con un ESP32-S3 y dos matrices LED. Este fork está preparado solo para los buses de A Coruña: los datos salen de la API de iTranvías de la Compañía de Tranvías de La Coruña. El panel y el configurador siguen igual; cambia el servicio que les da los horarios. La agencia cubierta está en [agencias soportadas](./02-user-manual/99-faq/agency-support.mdx).
 
 It can be useful near wherever there's a bus stop or train station:
 

@@ -1,0 +1,8 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      ITRANVIAS_POLL_SECONDS: "15"

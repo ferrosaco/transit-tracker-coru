@@ -128,4 +128,4 @@ If you are still experiencing issues after optimizing your router's settings, th
 - You have set a time offset in the [configurator](/configurator).
 - You haven't selected the correct routes.
 - There is some other problem with the schedule data. This can sometimes happen close to major service changes.
-- Your transit agency has changed the internal ID for a stop or route. If this happens, you should unselect and re-select the affected routes in the [configurator](/configurator), then save the configuration again.
+- iTranvías ha cambiado el identificador interno de una parada o una línea. Vuelve a elegir esas líneas en el [configurador](/configurator) y graba la configuración otra vez.
