@@ -10,6 +10,10 @@
 #include "esphome/core/log.h"
 #include "esphome/components/json/json_util.h"
 #include "esphome/components/network/util.h"
+#include "esphome/components/watchdog/watchdog.h"
+
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 namespace esphome {
 namespace transit_tracker {
@@ -109,16 +113,66 @@ static bool fetch_url(const char *url, std::string &body) {
 }
 
 void TransitTracker::setup() {
+  BaseType_t created = xTaskCreatePinnedToCore(&TransitTracker::poll_task_thunk_, "itranvias", 24576, this, 1,
+                                                &this->poll_task_handle_, tskNO_AFFINITY);
+  if (created != pdPASS) {
+    this->poll_task_handle_ = nullptr;
+    ESP_LOGE(TAG, "iTranvías task was not created; polling on the main loop");
+  } else {
+    ESP_LOGI(TAG, "iTranvías task started");
+  }
   this->set_interval("poll_itranvias", POLL_INTERVAL_MS, [this]() { this->request_refresh_(); });
   this->set_timeout("poll_itranvias_now", 1000, [this]() { this->request_refresh_(); });
 }
 
 void TransitTracker::loop() {
-  if (!this->refresh_requested_.load()) {
+  this->apply_result_();
+  if (this->fully_closed_.load() || this->poll_busy_.load() || !this->refresh_requested_.load()) {
     return;
   }
-  this->refresh_requested_ = false;
-  this->poll_();
+  if (!esphome::network::is_connected()) {
+    return;
+  }
+  auto now = this->rtc_->now();
+  if (!now.is_valid()) {
+    return;
+  }
+
+  PollJob job = this->make_job_(now.timestamp);
+  if (this->poll_task_handle_ == nullptr) {
+    this->refresh_requested_.store(false);
+    esphome::watchdog::WatchdogManager watchdog(60000);
+    this->apply_result_now_(this->fetch_schedule_(job));
+    return;
+  }
+
+  this->job_ = std::move(job);
+  this->refresh_requested_.store(false);
+  this->poll_busy_.store(true);
+  xTaskNotifyGive(this->poll_task_handle_);
+}
+
+void TransitTracker::poll_task_thunk_(void *param) { static_cast<TransitTracker *>(param)->poll_task_(); }
+
+void TransitTracker::poll_task_() {
+  while (!this->fully_closed_.load()) {
+    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(500));
+    if (this->fully_closed_.load()) {
+      break;
+    }
+    if (!this->poll_busy_.load()) {
+      continue;
+    }
+    PollJob job = this->job_;
+    FetchResult result = this->fetch_schedule_(job);
+    {
+      std::lock_guard<std::mutex> lock(this->result_mutex_);
+      this->result_ = std::move(result);
+      this->result_ready_ = true;
+    }
+    this->poll_busy_.store(false);
+  }
+  vTaskDelete(nullptr);
 }
 
 void TransitTracker::dump_config() {
@@ -144,18 +198,24 @@ void TransitTracker::set_schedule_string(const std::string &schedule_string) {
   if (schedule_string == this->schedule_string_ && valid == this->has_valid_pairs_) {
     return;
   }
+  this->generation_.fetch_add(1);
   this->schedule_string_ = schedule_string;
   this->has_valid_pairs_ = valid;
   this->has_loaded_ = false;
   if (!valid) {
-    this->publish_trips_({});
+    std::lock_guard<std::mutex> lock(this->schedule_state_.mutex);
+    this->schedule_state_.trips.clear();
     this->status_clear_error();
   }
   this->request_refresh_();
 }
 
 void TransitTracker::set_list_mode(const std::string &list_mode) {
+  if (list_mode == this->list_mode_) {
+    return;
+  }
   this->list_mode_ = list_mode;
+  this->generation_.fetch_add(1);
   this->request_refresh_();
 }
 
@@ -176,6 +236,9 @@ void TransitTracker::close(bool fully) {
 void TransitTracker::on_shutdown() {
   this->cancel_interval("poll_itranvias");
   this->close(true);
+  if (this->poll_task_handle_ != nullptr) {
+    xTaskNotifyGive(this->poll_task_handle_);
+  }
 }
 
 bool TransitTracker::ingest_network_(const std::string &body) {
@@ -263,22 +326,35 @@ bool TransitTracker::ingest_buses_(const std::string &body, std::vector<itranvia
   return true;
 }
 
-void TransitTracker::publish_trips_(const std::vector<itranvias::BuiltTrip> &trips) {
+TransitTracker::PollJob TransitTracker::make_job_(time_t now) const {
+  PollJob job;
+  job.generation = this->generation_.load();
+  job.now = now;
+  job.limit = this->limit_;
+  job.schedule = this->schedule_string_;
+  job.list_mode = this->list_mode_;
+  job.abbreviations = this->abbreviations_;
+  job.route_styles = this->route_styles_;
+  job.default_route_color = this->default_route_color_;
+  return job;
+}
+
+std::vector<Trip> TransitTracker::trips_from_(const std::vector<itranvias::BuiltTrip> &trips, const PollJob &job) const {
   std::vector<Trip> drawn;
   drawn.reserve(trips.size());
   for (const auto &trip : trips) {
     std::string headsign = trip.headsign;
-    for (const auto &abbr : this->abbreviations_) {
+    for (const auto &abbr : job.abbreviations) {
       size_t pos = headsign.find(abbr.first);
       if (pos != std::string::npos) {
         headsign.replace(pos, abbr.first.length(), abbr.second);
       }
     }
 
-    auto route_style = this->route_styles_.find(trip.route_id);
-    Color route_color = this->default_route_color_;
+    auto route_style = job.route_styles.find(trip.route_id);
+    Color route_color = job.default_route_color;
     std::string route_name = trip.route_name;
-    if (route_style != this->route_styles_.end()) {
+    if (route_style != job.route_styles.end()) {
       route_color = route_style->second.color;
       route_name = route_style->second.name;
     } else {
@@ -298,37 +374,83 @@ void TransitTracker::publish_trips_(const std::vector<itranvias::BuiltTrip> &tri
         .is_realtime = true,
     });
   }
-
-  std::lock_guard<std::mutex> lock(this->schedule_state_.mutex);
-  this->schedule_state_.trips = std::move(drawn);
+  return drawn;
 }
 
-void TransitTracker::poll_() {
-  if (this->fully_closed_ || !esphome::network::is_connected()) {
+void TransitTracker::apply_result_() {
+  FetchResult result;
+  {
+    std::lock_guard<std::mutex> lock(this->result_mutex_);
+    if (!this->result_ready_) {
+      return;
+    }
+    result = std::move(this->result_);
+    this->result_ready_ = false;
+  }
+  this->apply_result_now_(std::move(result));
+}
+
+void TransitTracker::apply_result_now_(FetchResult result) {
+  if (result.generation != this->generation_.load()) {
+    this->request_refresh_();
     return;
   }
-  auto now = this->rtc_->now();
-  if (!now.is_valid()) {
+
+  this->has_valid_pairs_ = result.valid_pairs;
+  if (!result.valid_pairs) {
+    std::lock_guard<std::mutex> lock(this->schedule_state_.mutex);
+    this->schedule_state_.trips.clear();
+    this->status_clear_error();
     return;
+  }
+
+  if (result.failure == FetchFailure::CATALOG) {
+    this->last_poll_ok_ = false;
+    if (!this->has_loaded_) {
+      this->status_set_error(LOG_STR("Failed to load iTranvias catalog"));
+    }
+    return;
+  }
+  if (result.failure == FetchFailure::ARRIVALS) {
+    this->last_poll_ok_ = false;
+    if (!this->has_loaded_) {
+      this->status_set_error(LOG_STR("Failed to load iTranvias arrivals"));
+    }
+    return;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(this->schedule_state_.mutex);
+    this->schedule_state_.trips = std::move(result.trips);
+  }
+  this->has_loaded_ = true;
+  this->last_poll_ok_ = true;
+  this->status_clear_error();
+  ESP_LOGI(TAG, "Published the iTranvías schedule");
+}
+
+TransitTracker::FetchResult TransitTracker::fetch_schedule_(const PollJob &job) {
+  FetchResult result;
+  result.generation = job.generation;
+  if (this->fully_closed_.load()) {
+    return result;
   }
 
   std::vector<itranvias::RouteStopPair> pairs;
-  itranvias::parse_route_stop_pairs(this->schedule_string_, pairs);
-  this->has_valid_pairs_ = !pairs.empty();
-  if (!this->has_valid_pairs_) {
-    this->publish_trips_({});
-    this->status_clear_error();
-    return;
+  itranvias::parse_route_stop_pairs(job.schedule, pairs);
+  result.valid_pairs = !pairs.empty();
+  if (!result.valid_pairs) {
+    return result;
   }
 
   bool catalog_expired = this->network_loaded_at_ == 0 || millis() - this->network_loaded_at_ > CATALOG_TTL_MS;
   if (!this->network_ready_ || catalog_expired) {
     std::string body;
+    ESP_LOGI(TAG, "Fetching iTranvías catalog");
     if (!fetch_url(STATIC_URL, body) || !this->ingest_network_(body)) {
       if (!this->network_ready_) {
-        this->last_poll_ok_ = false;
-        this->status_set_error(LOG_STR("Failed to load iTranvias catalog"));
-        return;
+        result.failure = FetchFailure::CATALOG;
+        return result;
       }
       ESP_LOGW(TAG, "Keeping the previous iTranvías catalog");
     } else {
@@ -343,6 +465,7 @@ void TransitTracker::poll_() {
   for (const auto &pair : pairs) {
     stops.insert(pair.stop_local);
   }
+  ESP_LOGI(TAG, "Fetching arrivals for %u stops", static_cast<unsigned>(stops.size()));
   for (int stop_id : stops) {
     std::string url = std::string(LIVE_URL_PREFIX) + std::to_string(stop_id);
     std::string body;
@@ -356,19 +479,14 @@ void TransitTracker::poll_() {
   }
 
   if (buses_by_stop.empty() && any_failure) {
-    this->last_poll_ok_ = false;
-    if (!this->has_loaded_) {
-      this->status_set_error(LOG_STR("Failed to load iTranvias arrivals"));
-    }
-    return;
+    result.failure = FetchFailure::ARRIVALS;
+    return result;
   }
 
-  auto built = itranvias::build_trips(this->network_, pairs, buses_by_stop, now.timestamp, this->limit_, this->list_mode_);
-  this->publish_trips_(built);
-  this->has_loaded_ = true;
-  this->last_poll_ok_ = true;
-  this->status_clear_error();
-  ESP_LOGD(TAG, "Published %u trips", static_cast<unsigned>(built.size()));
+  auto built = itranvias::build_trips(this->network_, pairs, buses_by_stop, job.now, job.limit, job.list_mode);
+  result.trips = this->trips_from_(built, job);
+  ESP_LOGD(TAG, "Built %u trips", static_cast<unsigned>(result.trips.size()));
+  return result;
 }
 
 void TransitTracker::set_abbreviations_from_text(const std::string &text) {

@@ -1,9 +1,14 @@
 #pragma once
 
 #include <atomic>
+#include <ctime>
 #include <map>
+#include <mutex>
 #include <utility>
 #include <vector>
+
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 #include "esphome/core/component.h"
 #include "esphome/components/display/display.h"
@@ -83,14 +88,50 @@ class TransitTracker : public Component {
     font::Font *font_;
     time::RealTimeClock *rtc_;
 
-    void poll_();
-    void publish_trips_(const std::vector<itranvias::BuiltTrip> &trips);
+    // HTTPS to iTranvías runs on its own task. The ESP32 task watchdog panics
+    // after 5s, and the TLS handshake plus the catalog download take longer
+    // than that on the main loop. A panic reboot is what made the screen
+    // alternate between "Waiting for network" and "Loading...".
+    enum class FetchFailure : uint8_t { NONE, CATALOG, ARRIVALS };
+
+    struct PollJob {
+      uint32_t generation{0};
+      time_t now{0};
+      int limit{3};
+      std::string schedule;
+      std::string list_mode;
+      std::map<std::string, std::string> abbreviations;
+      std::map<std::string, RouteStyle> route_styles;
+      Color default_route_color{};
+    };
+
+    struct FetchResult {
+      uint32_t generation{0};
+      bool valid_pairs{false};
+      FetchFailure failure{FetchFailure::NONE};
+      std::vector<Trip> trips;
+    };
+
+    static void poll_task_thunk_(void *param);
+    void poll_task_();
+    PollJob make_job_(time_t now) const;
+    FetchResult fetch_schedule_(const PollJob &job);
+    std::vector<Trip> trips_from_(const std::vector<itranvias::BuiltTrip> &trips, const PollJob &job) const;
+    void apply_result_();
+    void apply_result_now_(FetchResult result);
     bool ingest_network_(const std::string &body);
     bool ingest_buses_(const std::string &body, std::vector<itranvias::LiveBus> &out);
     void request_refresh_();
 
     std::atomic<bool> refresh_requested_{false};
     std::atomic<bool> fully_closed_{false};
+    std::atomic<bool> poll_busy_{false};
+    std::atomic<uint32_t> generation_{1};
+    TaskHandle_t poll_task_handle_{nullptr};
+    PollJob job_{};
+    std::mutex result_mutex_;
+    bool result_ready_{false};
+    FetchResult result_{};
     bool network_ready_ = false;
     bool has_valid_pairs_ = false;
     bool has_loaded_ = false;
