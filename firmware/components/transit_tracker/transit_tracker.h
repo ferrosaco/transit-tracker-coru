@@ -119,8 +119,8 @@ class TransitTracker : public Component {
     std::vector<Trip> trips_from_(const std::vector<itranvias::BuiltTrip> &trips, const PollJob &job) const;
     void apply_result_();
     void apply_result_now_(FetchResult result);
-    bool ingest_network_(const std::string &body);
-    bool ingest_buses_(const std::string &body, std::vector<itranvias::LiveBus> &out);
+    bool ingest_network_(const char *body, size_t length);
+    bool ingest_buses_(const char *body, size_t length, std::vector<itranvias::LiveBus> &out);
     void request_refresh_();
 
     std::atomic<bool> refresh_requested_{false};
@@ -128,6 +128,8 @@ class TransitTracker : public Component {
     std::atomic<bool> poll_busy_{false};
     std::atomic<uint32_t> generation_{1};
     TaskHandle_t poll_task_handle_{nullptr};
+    StackType_t *poll_stack_{nullptr};
+    StaticTask_t poll_tcb_{};
     PollJob job_{};
     std::mutex result_mutex_;
     bool result_ready_{false};

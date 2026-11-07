@@ -1,10 +1,12 @@
 #include "transit_tracker.h"
 #include "string_utils.h"
 
+#include <cstring>
 #include <cstdlib>
 #include <set>
 
 #include "esp_crt_bundle.h"
+#include "esp_heap_caps.h"
 #include "esp_http_client.h"
 #include "esphome/core/application.h"
 #include "esphome/core/log.h"
@@ -54,8 +56,24 @@ static std::string json_text(JsonVariant value) {
   return "";
 }
 
-static bool fetch_url(const char *url, std::string &body) {
-  body.clear();
+struct PsramBody {
+  char *data{nullptr};
+  size_t size{0};
+  ~PsramBody() { heap_caps_free(this->data); }
+  PsramBody() = default;
+  PsramBody(const PsramBody &) = delete;
+  PsramBody &operator=(const PsramBody &) = delete;
+};
+
+static bool fetch_url(const char *url, PsramBody &body) {
+  heap_caps_free(body.data);
+  body.data = nullptr;
+  body.size = 0;
+  char *buffer = static_cast<char *>(heap_caps_malloc(MAX_HTTP_BODY + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (buffer == nullptr) {
+    ESP_LOGW(TAG, "No PSRAM for the iTranvías response");
+    return false;
+  }
   esp_http_client_config_t config = {};
   config.url = url;
   config.method = HTTP_METHOD_GET;
@@ -66,12 +84,14 @@ static bool fetch_url(const char *url, std::string &body) {
 
   esp_http_client_handle_t client = esp_http_client_init(&config);
   if (client == nullptr) {
+    heap_caps_free(buffer);
     ESP_LOGW(TAG, "HTTP client init failed");
     return false;
   }
 
   esp_err_t err = esp_http_client_open(client, 0);
   if (err != ESP_OK) {
+    heap_caps_free(buffer);
     ESP_LOGW(TAG, "HTTP open failed: %s", esp_err_to_name(err));
     esp_http_client_cleanup(client);
     return false;
@@ -80,19 +100,22 @@ static bool fetch_url(const char *url, std::string &body) {
   esp_http_client_fetch_headers(client);
   int status = esp_http_client_get_status_code(client);
   if (status != 200) {
+    heap_caps_free(buffer);
     ESP_LOGW(TAG, "HTTP %d for %s", status, url);
     esp_http_client_close(client);
     esp_http_client_cleanup(client);
     return false;
   }
 
-  char buffer[1024];
+  char chunk[1024];
   int idle_reads = 0;
-  while (body.size() < MAX_HTTP_BODY) {
+  size_t size = 0;
+  while (size < MAX_HTTP_BODY) {
     App.feed_wdt();
-    int read = esp_http_client_read(client, buffer, sizeof(buffer));
+    int read = esp_http_client_read(client, chunk, sizeof(chunk));
     if (read < 0) {
       ESP_LOGW(TAG, "HTTP read failed");
+      heap_caps_free(buffer);
       esp_http_client_close(client);
       esp_http_client_cleanup(client);
       return false;
@@ -104,20 +127,31 @@ static bool fetch_url(const char *url, std::string &body) {
       continue;
     }
     idle_reads = 0;
-    body.append(buffer, static_cast<size_t>(read));
+    memcpy(buffer + size, chunk, static_cast<size_t>(read));
+    size += static_cast<size_t>(read);
   }
 
+  buffer[size] = '\0';
+  body.data = buffer;
+  body.size = size;
   esp_http_client_close(client);
   esp_http_client_cleanup(client);
-  return !body.empty();
+  return size > 0;
 }
 
 void TransitTracker::setup() {
-  BaseType_t created = xTaskCreatePinnedToCore(&TransitTracker::poll_task_thunk_, "itranvias", 24576, this, 1,
-                                                &this->poll_task_handle_, tskNO_AFFINITY);
-  if (created != pdPASS) {
-    this->poll_task_handle_ = nullptr;
-    ESP_LOGE(TAG, "iTranvías task was not created; polling on the main loop");
+  // TLS plus the full certificate bundle needs more stack than the main loop
+  // has. The stack itself lives in PSRAM so it does not eat the internal RAM
+  // the Wi-Fi and the matrix need.
+  static constexpr uint32_t stack_bytes = 48 * 1024;
+  this->poll_stack_ =
+      static_cast<StackType_t *>(heap_caps_malloc(stack_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (this->poll_stack_ != nullptr) {
+    this->poll_task_handle_ = xTaskCreateStaticPinnedToCore(&TransitTracker::poll_task_thunk_, "itranvias", stack_bytes,
+                                                            this, 1, this->poll_stack_, &this->poll_tcb_, tskNO_AFFINITY);
+  }
+  if (this->poll_task_handle_ == nullptr) {
+    ESP_LOGE(TAG, "iTranvías task was not created");
   } else {
     ESP_LOGI(TAG, "iTranvías task started");
   }
@@ -141,8 +175,11 @@ void TransitTracker::loop() {
   PollJob job = this->make_job_(now.timestamp);
   if (this->poll_task_handle_ == nullptr) {
     this->refresh_requested_.store(false);
-    esphome::watchdog::WatchdogManager watchdog(60000);
-    this->apply_result_now_(this->fetch_schedule_(job));
+    FetchResult failed;
+    failed.generation = job.generation;
+    failed.valid_pairs = true;
+    failed.failure = FetchFailure::CATALOG;
+    this->apply_result_now_(std::move(failed));
     return;
   }
 
@@ -241,10 +278,10 @@ void TransitTracker::on_shutdown() {
   }
 }
 
-bool TransitTracker::ingest_network_(const std::string &body) {
-  JsonDocument doc = json::parse_json(body);
+bool TransitTracker::ingest_network_(const char *body, size_t length) {
+  JsonDocument doc = json::parse_json(reinterpret_cast<const uint8_t *>(body), length);
   if (doc.isNull()) {
-    ESP_LOGW(TAG, "Static catalog is not valid JSON (%u bytes)", static_cast<unsigned>(body.size()));
+    ESP_LOGW(TAG, "Static catalog is not valid JSON (%u bytes)", static_cast<unsigned>(length));
     return false;
   }
 
@@ -294,9 +331,9 @@ bool TransitTracker::ingest_network_(const std::string &body) {
   return true;
 }
 
-bool TransitTracker::ingest_buses_(const std::string &body, std::vector<itranvias::LiveBus> &out) {
+bool TransitTracker::ingest_buses_(const char *body, size_t length, std::vector<itranvias::LiveBus> &out) {
   out.clear();
-  JsonDocument doc = json::parse_json(body);
+  JsonDocument doc = json::parse_json(reinterpret_cast<const uint8_t *>(body), length);
   if (doc.isNull()) {
     return false;
   }
@@ -445,9 +482,9 @@ TransitTracker::FetchResult TransitTracker::fetch_schedule_(const PollJob &job) 
 
   bool catalog_expired = this->network_loaded_at_ == 0 || millis() - this->network_loaded_at_ > CATALOG_TTL_MS;
   if (!this->network_ready_ || catalog_expired) {
-    std::string body;
+    PsramBody body;
     ESP_LOGI(TAG, "Fetching iTranvías catalog");
-    if (!fetch_url(STATIC_URL, body) || !this->ingest_network_(body)) {
+    if (!fetch_url(STATIC_URL, body) || !this->ingest_network_(body.data, body.size)) {
       if (!this->network_ready_) {
         result.failure = FetchFailure::CATALOG;
         return result;
@@ -468,9 +505,9 @@ TransitTracker::FetchResult TransitTracker::fetch_schedule_(const PollJob &job) 
   ESP_LOGI(TAG, "Fetching arrivals for %u stops", static_cast<unsigned>(stops.size()));
   for (int stop_id : stops) {
     std::string url = std::string(LIVE_URL_PREFIX) + std::to_string(stop_id);
-    std::string body;
+    PsramBody body;
     std::vector<itranvias::LiveBus> buses;
-    if (!fetch_url(url.c_str(), body) || !this->ingest_buses_(body, buses)) {
+    if (!fetch_url(url.c_str(), body) || !this->ingest_buses_(body.data, body.size, buses)) {
       any_failure = true;
       ESP_LOGW(TAG, "No live arrivals for stop %d", stop_id);
       continue;
